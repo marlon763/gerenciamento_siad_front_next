@@ -1,63 +1,66 @@
 "use client";
 
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import * as z from "zod";
 import { useState } from "react";
+import { cn } from "@/lib/utils";
+import { Spinner } from "./ui/spinner";
 import { toast, Toaster } from "sonner";
+import { useForm } from "react-hook-form";
 import { useRouter } from "next/navigation";
+import { Input } from "@/components/ui/input";
+import { login } from "@/auth/authSaveSession";
+import { Button } from "@/components/ui/button";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 
-type FormState = {
-  email: string;
-  password: string;
-};
+export const LoginFormSchema = z.object({
+  email: z
+    .string()
+    .min(1, { message: "Email é obrigatório" })
+    .email({ message: "Email inválido!" })
+    .trim(),
+  password: z
+    .string()
+    .min(8, { message: "A senha deve ter pelo menos 8 caracteres!" }),
+});
+
+export type LoginFormSchemaType = z.infer<typeof LoginFormSchema>;
 
 export function LoginForm({
   className,
   ...props
 }: React.ComponentProps<"form">) {
-  const [form, setForm] = useState<FormState>({
-    email: "",
-    password: "",
-  });
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  //captura o valor dos inputs e monta o formData
-  function handleChange(event: React.ChangeEvent<HTMLInputElement>) {
-    const { name, value } = event.target;
-    setForm((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-  }
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<LoginFormSchemaType>({
+    resolver: zodResolver(LoginFormSchema),
+    defaultValues: {
+      email: "",
+      password: "",
+    },
+  });
 
-  //requisicao ao servidor ===========[/login]===========
-  async function onSubmit(event: React.FormEvent) {
-    event.preventDefault();
+  async function onSubmit(data: LoginFormSchemaType) {
     setLoading(true);
 
     try {
-      const request = await fetch("http://localhost:8080/auth/login", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify(form),
-      });
+      const result = await login(data.email, data.password);
 
-      //trata em caso de credencias erradas
-      if (!request.ok) {
-        const error = await request.json();
-        toast.warning(error.message);
+      if (!result.success) {
+        toast.error(result.message);
         return;
       }
 
-      //redireciona para a home do app
-      router.push("/home");
+      // Redireciona baseado na role do usuário, se necessário
+      router.push("/dashboard");
     } catch (error) {
-      console.log(error);
+      toast.error("Erro inesperado ao fazer login!");
+      console.error(error);
     } finally {
       setLoading(false);
     }
@@ -66,7 +69,7 @@ export function LoginForm({
   return (
     <form
       className={cn("flex flex-col gap-6", className)}
-      onSubmit={onSubmit}
+      onSubmit={handleSubmit(onSubmit)}
       {...props}
     >
       <FieldGroup>
@@ -80,12 +83,13 @@ export function LoginForm({
           <FieldLabel htmlFor="email">Email</FieldLabel>
           <Input
             id="email"
-            name="email"
             type="email"
             placeholder="example@email.com"
-            required
-            onChange={handleChange}
+            {...register("email")}
           />
+          {errors.email && (
+            <p className="text-sm text-red-500 mt-1">{errors.email.message}</p>
+          )}
         </Field>
         <Field>
           <div className="flex items-center">
@@ -97,17 +101,16 @@ export function LoginForm({
               Esqueceu sua senha?
             </a>
           </div>
-          <Input
-            id="password"
-            name="password"
-            type="password"
-            required
-            onChange={handleChange}
-          />
+          <Input id="password" type="password" {...register("password")} />
+          {errors.password && (
+            <p className="text-sm text-red-500 mt-1">
+              {errors.password.message}
+            </p>
+          )}
         </Field>
         <Field>
           <Button type="submit" disabled={loading}>
-            {loading ? "Entrando..." : "Login"}
+            {loading ? <Spinner /> : "Login"}
           </Button>
         </Field>
       </FieldGroup>
